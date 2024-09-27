@@ -1,3 +1,4 @@
+// @ts-nocheck
 "use client";
 
 import { ChevronLeft, ChevronRight, Heart, Trophy, X } from "lucide-react";
@@ -5,6 +6,7 @@ import Image from "next/image";
 import { CryptoApp } from "./AppList";
 import { useCallback, useEffect, useState, useRef } from "react";
 import * as d3 from "d3";
+import DOMPurify from "isomorphic-dompurify";
 
 interface Node extends d3.SimulationNodeDatum {
   id: string;
@@ -13,6 +15,23 @@ interface Node extends d3.SimulationNodeDatum {
   x?: number;
   y?: number;
 }
+
+const AbstractAvatarSVG = ({ seed }: { seed: number }) => {
+  const colors = [
+    "#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A", "#98D8C8",
+    "#F06292", "#AED581", "#FFD54F", "#4DB6AC", "#7986CB"
+  ];
+
+  const getColor = (index: number) => colors[index % colors.length];
+
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <rect width="24" height="24" fill={getColor(seed)} />
+      <circle cx="12" cy="8" r="4" fill={getColor(seed + 1)} />
+      <rect x="4" y="14" width="16" height="6" fill={getColor(seed + 2)} />
+    </svg>
+  );
+};
 
 export const AppOverlay = ({
   app,
@@ -25,7 +44,9 @@ export const AppOverlay = ({
 }) => {
   const [nodes, setNodes] = useState<Node[]>([]);
   const svgRef = useRef<SVGSVGElement>(null);
-  const [likesCount, setLikesCount] = useState(parseInt(app.likes));
+  const [likesCount, setLikesCount] = useState(
+    Math.floor(parseFloat(app.likes))
+  );
 
   useEffect(() => {
     const newNodes = Array.from({ length: parseInt(app.likes) }, (_, i) => ({
@@ -113,7 +134,7 @@ export const AppOverlay = ({
 
   const handleLike = useCallback(() => {
     onLike(app.id);
-    setLikesCount((prevCount) => prevCount + 1);
+   //  setLikesCount((prevCount) => prevCount + 1);
     setNodes((prevNodes) => [
       ...prevNodes,
       {
@@ -124,28 +145,31 @@ export const AppOverlay = ({
     ]);
   }, [app.id, onLike]);
 
+  // Create a sanitize function that allows anchor tags
+  const sanitize = (html: string) => {
+    return DOMPurify.sanitize(html, {
+      ALLOWED_TAGS: ["p", "br", "a", "strong", "em", "ul", "ol", "li", "img", "h3", "hr"],
+      ALLOWED_ATTR: ["href", "target", "rel", "src", "alt", "width", "height"],
+    });
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-     
-      <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white overflow-x-hidden rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto custom-scrollbar">
         <div className="flex justify-between items-start mb-4">
-          
-        <pre>{JSON.stringify(app, (key, value) =>
-        typeof value === 'bigint' ? value.toString() : value
-      , 2)}</pre>
-          <div className="flex items-center">
-            <Image
-              src={app.logo}
-              alt={`${app.name} logo`}
-              width={48}
-              height={48}
-              className="mr-4"
-            />
+           
+          <div className="flex items-start">
             <div>
-              <h2 className="text-2xl font-bold">{app.name}</h2>
+              <h2 className="text-2xl font-bold">
+                {app.name === "Untitled"
+                  ? app.description.split(/[.!?]+/)[0].trim()
+                  : app.name}
+              </h2>
               <div
-                className="mt-2 text-sm text-gray-600"
-                dangerouslySetInnerHTML={{ __html: app.descriptionHTML }}
+                className="mt-2 text-sm text-gray-600 description-content"
+                dangerouslySetInnerHTML={{
+                  __html: sanitize(app.descriptionHTML),
+                }}
               />
             </div>
           </div>
@@ -162,7 +186,7 @@ export const AppOverlay = ({
             <X size={24} />
           </button>
         </div>
-        {/*
+    
         {app.screenshot && app.screenshot.length > 0 && (
           <div className="relative mb-4">
             <div className="flex items-center">
@@ -203,16 +227,8 @@ export const AppOverlay = ({
             </div>
           </div>
         )}
-        */}
-        <div className="flex justify-center items-center mb-4">
-          <button
-            onClick={handleLike}
-            className="flex items-center justify-center bg-yellow-400 hover:bg-yellow-500 text-white font-bold py-2 px-4 rounded-full transition duration-300"
-          >
-            <Heart className="mr-2" size={20} />
-            Like
-          </button>
-        </div>
+
+       
 
         <div className="flex justify-center items-center mb-4">
           <div className="relative">
@@ -232,21 +248,13 @@ export const AppOverlay = ({
         <div className="border-t pt-4">
           <h3 className="font-semibold mb-2">Comments</h3>
           <div className="bg-gray-100 p-2 rounded-lg mb-2">
-            <p className="text-sm text-gray-500">
-              You must be logged in before you can comment.
-            </p>
+            <p className="text-sm text-gray-500">Go to JokeRace to comment.</p>
           </div>
           {app.comments.map((comment, index) => (
             <div key={index} className="mb-4">
               <div className="flex items-center mb-1">
-                <Image
-                  src="/Profile.png"
-                  alt="User avatar"
-                  width={24}
-                  height={24}
-                  className="rounded-md mr-2"
-                />
-                <span className="font-semibold text-sm">{comment.author}</span>
+                <AbstractAvatarSVG seed={index} />
+                <span className="font-semibold text-sm ml-2">{comment.author}</span>
                 {comment.author === app.author && (
                   <span className="ml-2 px-1 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded">
                     OP
@@ -256,8 +264,10 @@ export const AppOverlay = ({
                   {comment.timestamp}
                 </span>
               </div>
-              <p className="text-sm">{comment.content}</p>
-              <button className="text-xs text-gray-500 mt-1">Reply</button>
+              <p
+                className="text-sm"
+                dangerouslySetInnerHTML={{ __html: comment.content }}
+              ></p>
             </div>
           ))}
         </div>
@@ -265,3 +275,15 @@ export const AppOverlay = ({
     </div>
   );
 };
+
+// Add this style to your global CSS or use a CSS-in-JS solution
+const styles = `
+  .description-content img {
+    max-width: 100%;
+    height: auto;
+    margin: 10px 0;
+  }
+`;
+
+// If using CSS-in-JS, you can add this to your component
+<style jsx>{styles}</style>

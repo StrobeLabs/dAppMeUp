@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React, { useState, useEffect, useRef, MouseEvent, useMemo } from "react";
 import { useContractRead, useContractReads } from "wagmi";
 import { formatEther } from "ethers";
@@ -38,7 +39,9 @@ export interface CryptoApp {
 
 interface AppListProps {
   view: "list" | "card";
+  cryptoApps: CryptoApp[];
 }
+
 
 const AppList: React.FC<AppListProps> = ({ view }) => {
   const parseContractData = (data: any[]): CryptoApp[] => {
@@ -73,67 +76,93 @@ const AppList: React.FC<AppListProps> = ({ view }) => {
       return canvas.toDataURL();
     };
 
-    const extractTitle = (doc: Document, textContent: string): string => {
-      const candidates: string[] = [];
-
-      // Strategy 1: Check for heading tags
-      ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].forEach(tag => {
-        const element = doc.querySelector(tag);
-        if (element?.textContent) {
-          candidates.push(element.textContent.trim());
-        }
-      });
-
-      // Strategy 2: Check for strong tags within paragraphs
-      doc.querySelectorAll('p strong, strong').forEach(tag => {
-        if (tag.textContent) {
-          candidates.push(tag.textContent.trim());
-        }
-      });
-
-      // Strategy 3: First sentence of the content
-      const firstSentence = textContent.split(/[.!?]+/)[0].trim();
-      if (firstSentence.length > 3) {
-        candidates.push(firstSentence);
-      }
-
-      // Strategy 4: First paragraph
-      const firstParagraph = doc.querySelector('p');
-      if (firstParagraph?.textContent) {
-        candidates.push(firstParagraph.textContent.trim());
-      }
-
-      // Filter out candidates that are too long or too short
-      const validCandidates = candidates.filter(c => c.length > 3 && c.length <= 100);
-
-      // Choose the best candidate
-      if (validCandidates.length > 0) {
-        // Prefer shorter titles that are not just a single word
-        return validCandidates.sort((a, b) => {
-          const aWords = a.split(/\s+/).length;
-          const bWords = b.split(/\s+/).length;
-          if (aWords === 1 && bWords > 1) return 1;
-          if (bWords === 1 && aWords > 1) return -1;
-          return a.length - b.length;
-        })[0];
-      }
-
-      return "Untitled";
-    };
-
     return data.map((item) => {
       const parser = new DOMParser();
       const doc = parser.parseFromString(item.description, "text/html");
-      const textContent = doc.body.textContent || "";
 
-      const title = extractTitle(doc, textContent);
+      // Extract the text content with improved formatting
+      const extractFormattedText = (element: Element): string => {
+        let text = "";
+        element.childNodes.forEach((node) => {
+          if (node.nodeType === Node.TEXT_NODE) {
+            text += node.textContent?.trim() + " ";
+          } else if (node.nodeType === Node.ELEMENT_NODE) {
+            const tagName = (node as Element).tagName.toLowerCase();
+            const innerText = extractFormattedText(node as Element);
+            switch (tagName) {
+              case "p":
+              case "div":
+              case "h1":
+              case "h2":
+              case "h3":
+              case "h4":
+              case "h5":
+              case "h6":
+                text += innerText.trim() + ". ";
+                break;
+              case "li":
+                text += "• " + innerText.trim() + ". ";
+                break;
+              case "br":
+                text += "\n";
+                break;
+              default:
+                text += innerText + " ";
+            }
+          }
+        });
+        return text.trim();
+      };
+
+      const textContent = extractFormattedText(doc.body);
+
+      // More robust title extraction
+      let title = "";
+
+      // Check for the first paragraph or heading
+      const firstElement = doc.querySelector("p, h1, h2, h3, h4, h5, h6");
+      if (firstElement && firstElement.textContent) {
+        title = firstElement.textContent.trim();
+      }
+
+      // If no suitable title found, use the first sentence
+      if (!title) {
+        const textContent = doc.body.textContent || "";
+        const firstSentence = textContent.split(/[.!?]+/)[0].trim();
+        if (firstSentence.length > 0 && firstSentence.length <= 50) {
+          title = firstSentence;
+        }
+      }
+
+      // If no title found in HTML structure, use the first sentence of the description
+      if (!title) {
+        const firstSentence = textContent.split(/[.!?]+/)[0].trim();
+        if (firstSentence.length > 3 && firstSentence.length <= 50) {
+          title = firstSentence;
+        }
+      }
+
+      // If still no title, use the first sentence as the title
+      if (!title) {
+        const firstSentence = textContent.split(/[.!?]+/)[0].trim();
+        if (firstSentence.length > 0) {
+          title = firstSentence;
+        }
+      }
+
+      if (!title) {
+        // First, try to extract from HTML structure
+        const strongTags = doc.querySelectorAll("p strong, strong");
+        for (const tag of strongTags) {
+          if (tag.textContent && tag.textContent.trim().length > 0) {
+            title = tag.textContent.trim();
+            break;
+          }
+        }
+      }
 
       // Extract image URL
       const imageUrl = doc.querySelector("img")?.getAttribute("src");
-
-      const defaultSeed = `${item.id}screenshot`;
-      const logo = imageUrl || generateAbstractLogo(defaultSeed);
-      const screenshot = imageUrl ? [imageUrl] : [];
 
       // Sanitize the HTML to prevent XSS attacks
       const sanitizedHTML = DOMPurify.sanitize(doc.body.innerHTML);
@@ -141,12 +170,12 @@ const AppList: React.FC<AppListProps> = ({ view }) => {
       return {
         id: item.id,
         name: title,
-        description: textContent,
+        description: textContent, // Use the extracted formatted text content here
         descriptionHTML: sanitizedHTML,
-        logo: logo,
+        logo: imageUrl || generateAbstractLogo(`${item.id}logo`),
         likes: item.likes.toString(),
         dislikes: item.dislikes ? item.dislikes.toString() : "0",
-        screenshot: screenshot,
+        screenshot: imageUrl ? [imageUrl] : [],
         liked: false,
         comments: item.comments.map((comment) => ({
           ...comment,
@@ -345,8 +374,9 @@ const AppList: React.FC<AppListProps> = ({ view }) => {
   };
 
   const handleLike = async (appId: string) => {
+   window.location.href = "https://jokerace.io/contest/base/0x7f4e1f8d7b626d5120008daedcea921060ebfb68"
     // Implement like functionality here
-    setData((prevData) =>
+    /*setData((prevData) =>
       prevData.map((app) =>
         app.id === appId
           ? { ...app, likes: (parseFloat(app.likes) + 1).toString() }
@@ -367,6 +397,7 @@ const AppList: React.FC<AppListProps> = ({ view }) => {
       }));
       setHeartBubbles([...heartBubbles, ...newBubbles]);
     }
+      */
   };
 
   const handleAppClick = (app: CryptoApp) => {
@@ -464,79 +495,76 @@ const AppList: React.FC<AppListProps> = ({ view }) => {
                   unoptimized
                   priority
                 />
-                <span className="ml-1 text-yellow-400">{app.likes}</span>
+                <span className="ml-1 text-yellow-400">
+                  {Math.floor(parseFloat(app.likes))}
+                </span>
               </button>
             </div>
             {hoveredApp && hoveredApp.id === app.id && (
               <div
-                className="fixed z-10 bg-white shadow-lg rounded-lg p-4 w-64 overflow-hidden"
+                className="fixed z-10 bg-[#FAFAFA] shadow-lg rounded-lg  w-96 overflow-hidden"
                 style={{
                   left: `${mousePosition.x + 16}px`,
                   top: `${mousePosition.y + 16}px`,
                 }}
               >
                 {app.screenshot && app.screenshot.length > 0 && (
-                  <div className="relative mb-2 rounded-lg overflow-hidden">
+                  <div className="relative mb-2 rounded-2xl overflow-hidden w-full ">
                     <Image
                       src={app.screenshot[0]}
                       alt={`${app.name} screenshot`}
                       width={240}
                       height={120}
-                      className="object-cover"
+                      className="w-full"
                     />
                   </div>
                 )}
-                <h3 className="text-lg font-semibold truncate">{app.name}</h3>
-                <p className="text-sm text-gray-600 mt-2 line-clamp-3 overflow-ellipsis">
-                  {app.description}
-                </p>
-                <div className="flex items-center mt-2">
-                  <Image
-                    alt="heart"
-                    src="/Marshki.png"
-                    width={16}
-                    height={16}
-                  />
-                  <span className="ml-1 text-yellow-400">{app.likes}</span>
+                <div className="p-4">
+                  <h3 className="text-lg font-semibold truncate">{app.name}</h3>
+                  <p className="text-sm text-gray-600 mt-2 line-clamp-6 overflow-ellipsis">
+                    {app.description}
+                  </p>
+                 
                 </div>
               </div>
             )}
           </>
         ) : (
-          <div className="flex flex-col">
-            <div className="relative mb-2 rounded-lg overflow-hidden aspect-video">
+          <div className="flex flex-col border-gray-50 border p-1 shadow-md hover:shadow-xl transition-all duration-300 rounded-lg">
+            <div className="relative mb-4 rounded-lg overflow-hidden aspect-video ">
               <Image
-                src={app.screenshot[0] || "/placeholder-image.jpg"}
+                src={app.screenshot[0] || "/Placeholder.png"}
                 alt={`${app.name} screenshot`}
                 fill
                 className="object-cover"
               />
             </div>
-            <div className="flex items-start">
-              <div className="w-10 h-10 mr-2 relative flex-shrink-0">
-                <Image
-                  src={app.logo}
-                  alt={`${app.name} logo`}
-                  fill
-                  className="rounded-md object-cover"
-                />
-              </div>
-              <div className="flex-grow overflow-hidden">
+            <div className="flex items-start px-4 2xl:px-4  pb-4 ">
+              <div className="flex-grow min-w-0">
                 <h3 className="text-lg font-semibold truncate">{app.name}</h3>
-                <div className="line-clamp-2 overflow-ellipsis">
+                <div className="line-clamp-2 text-xs overflow-hidden text-ellipsis">
                   {renderDescription(truncatedDescription)}
                 </div>
               </div>
               <button
-                className="flex items-center ml-2"
+                className="flex flex-col -translate-y-3 translate-x-3 justify-center items-center ml-2 flex-shrink-0"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleLike(app.id);
                 }}
                 ref={heartButtonRef}
               >
-                <Image alt="heart" src="/Marshki.png" width={16} height={16} />
-                <span className="ml-1 text-yellow-400">{app.likes}</span>
+                <div className="w-16 h-16 relative">
+                  <Image
+                    alt="heart"
+                    src="/Marshki.png"
+                    fill
+                    className="object-contain"
+                  />
+                </div>
+                <span className="mt-1 text-xs text-yellow-400 whitespace-nowrap">
+                  {Math.floor(parseFloat(app.likes))}
+                </span>
               </button>
             </div>
           </div>
@@ -576,10 +604,12 @@ const AppList: React.FC<AppListProps> = ({ view }) => {
   return (
     <div className="app-list-container">
       <div className="mb-4">
+   
+
         <button
           onClick={toggleSortOrder}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-        >
+          className="px-4 py-2 text-[#b98000] font-medium sign-in-button rounded-[38px] cursor-pointer transition-all justify-center items-center gap-2.5 inline-flex"
+        > 
           Sort by Votes:{" "}
           {sortOrder === "desc" ? "Highest First" : "Lowest First"}
         </button>

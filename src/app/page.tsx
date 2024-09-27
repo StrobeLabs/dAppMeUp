@@ -1,6 +1,6 @@
 "use client";
 
-import AppList from "@/components/AppList";
+import AppList, { CryptoApp } from "@/components/AppList";
 import clsx from "clsx";
 import { useState } from "react";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
@@ -14,10 +14,10 @@ function App() {
 
   return (
     <div className="container mx-auto p-4 px-36">
-      <main className="pt-6 px-20">
+      <main className="pt-6  2xl:px-20">
         <div className="flex justify-between items-center border-b mb-6 pb-3">
           <h2 className="text-2xl font-bold mb-4">Crypto Apps On Your Radar</h2>
-          <div className="flex justify-end mb-4 gap-2 items-center">
+          <div className="flex justify-end mb-1 gap-2 items-center">
             <button
               className={clsx(
                 "opacity-60 px-3 py-2 rounded-[38px] cursor-pointer transition-all justify-center items-center gap-2.5 inline-flex",
@@ -39,7 +39,7 @@ function App() {
           </div>
         </div>
 
-        <AppList view={view} data={cryptoApps} />
+        <AppList view={view} cryptoApps={cryptoApps} />
       </main>
     </div>
   );
