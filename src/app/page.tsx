@@ -26,8 +26,8 @@ function App() {
               onClick={() => setView("list")}
             >
               List
-            </button>
-            <button
+          </button>
+          <button
               className={clsx(
                 "opacity-60 px-3 py-2 rounded-[38px] cursor-pointer transition-all justify-center items-center gap-2.5 inline-flex",
                 view == "card" ? "sign-in-button" : " hover:bg-[#f5f5f5]"

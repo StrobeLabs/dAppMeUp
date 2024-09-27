@@ -8,6 +8,7 @@ import { cookieToInitialState } from "wagmi";
 import { getConfig } from "../wagmi";
 import { Providers } from "./providers";
 import Navbar from "@/components/Navbar";
+import MobileWarning from "@/components/MobileWarning";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -27,6 +28,7 @@ export default function RootLayout(props: { children: ReactNode }) {
         <Providers initialState={initialState}>
           <Navbar />
           {props.children}
+          <MobileWarning />
         </Providers>
       </body>
     </html>
