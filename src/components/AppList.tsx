@@ -437,6 +437,33 @@ const AppList: React.FC<AppListProps> = ({ view, contractAddress, onLike }) => {
             </div>
           </div>
         )}
+        {hoveredApp && hoveredApp.id === app.id && (
+          <div
+            className="fixed z-10 bg-[#FAFAFA] shadow-lg rounded-lg w-96 overflow-hidden"
+            style={{
+              left: `${mousePosition.x + 16}px`,
+              top: `${mousePosition.y + 16}px`,
+            }}
+          >
+            {app.screenshot && app.screenshot.length > 0 && (
+              <div className="relative mb-2 rounded-2xl overflow-hidden w-full">
+                <Image
+                  src={app.screenshot[0]}
+                  alt={`${app.name} screenshot`}
+                  width={240}
+                  height={120}
+                  className="w-full"
+                />
+              </div>
+            )}
+            <div className="p-4">
+              <h3 className="text-lg font-semibold truncate">{app.name}</h3>
+              <p className="text-sm text-gray-600 mt-2 line-clamp-6 overflow-ellipsis">
+                {app.description}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
