@@ -9,7 +9,6 @@ import clsx from "clsx";
 import { AppOverlay } from "./AppOverlay";
 import DOMPurify from "isomorphic-dompurify";
 
-const contractAddress = "0x7f4e1f8d7b626d5120008daedcea921060ebfb68";
 const contractABI = contractABIJson.abi;
 const DESCRIPTION_MAX_LENGTH_PREVIEW = 200;
 
@@ -39,11 +38,20 @@ export interface CryptoApp {
 
 interface AppListProps {
   view: "list" | "card";
-  cryptoApps: CryptoApp[];
+  contractAddress: string;
+  onLike?: (id: string) => void;
 }
 
+const AppList: React.FC<AppListProps> = ({ view, contractAddress, onLike }) => {
+  const [data, setData] = useState<CryptoApp[]>([]);
+  const [processedComments, setProcessedComments] = useState<any[]>([]);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [selectedApp, setSelectedApp] = useState<CryptoApp | null>(null);
+  const [heartBubbles, setHeartBubbles] = useState<any[]>([]);
+  const [hoveredApp, setHoveredApp] = useState<CryptoApp | null>(null);
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const heartButtonRef = useRef<HTMLButtonElement>(null);
 
-const AppList: React.FC<AppListProps> = ({ view }) => {
   const parseContractData = (data: any[]): CryptoApp[] => {
     const generateAbstractLogo = (seed: string) => {
       const canvas = document.createElement("canvas");
@@ -194,133 +202,56 @@ const AppList: React.FC<AppListProps> = ({ view }) => {
     });
   };
 
-  const [data, setData] = useState<any[]>([]);
-  const [processedComments, setProcessedComments] = useState<any[]>([]);
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
-
-  /** Step 1: Fetch proposal IDs **/
-  const {
-    data: proposalIds,
-    isLoading: isLoadingProposalIds,
-    isError: isProposalIdsError,
-    error: proposalIdsError,
-  } = useContractRead({
-    address: contractAddress,
+  // Fetch proposal IDs
+  const { data: proposalIds, isLoading: isLoadingProposalIds, isError: isProposalIdsError } = useContractRead({
+    address: contractAddress as `0x${string}`,
     abi: contractABI,
     functionName: "getAllProposalIds",
     chainId: base.id,
   });
 
-  /** Step 2: Fetch proposals, votes, and comments **/
-  const enabled = proposalIds && proposalIds.length > 0;
-
-  const {
-    data: proposalsData,
-    isLoading: isLoadingProposals,
-    isError: isProposalsError,
-    error: proposalsError,
-  } = useContractReads({
+  // Fetch proposals, votes, and comments
+  const { data: proposalsData, isLoading: isLoadingProposals } = useContractReads({
     contracts: proposalIds
       ? proposalIds.map((id) => ({
-          address: contractAddress,
+          address: contractAddress as `0x${string}`,
           abi: contractABI,
           functionName: "getProposal",
           args: [id],
           chainId: base.id,
         }))
       : [],
-    enabled,
+    enabled: !!proposalIds,
   });
 
-  const {
-    data: votesData,
-    isLoading: isLoadingVotes,
-    isError: isVotesError,
-    error: votesError,
-  } = useContractReads({
+  const { data: votesData, isLoading: isLoadingVotes } = useContractReads({
     contracts: proposalIds
       ? proposalIds.map((id) => ({
-          address: contractAddress,
+          address: contractAddress as `0x${string}`,
           abi: contractABI,
           functionName: "proposalVotes",
           args: [id],
           chainId: base.id,
         }))
       : [],
-    enabled,
+    enabled: !!proposalIds,
   });
 
-  const {
-    data: commentIds,
-    isLoading: isLoadingComments,
-    isError: isCommentsError,
-    error: commentsError,
-  } = useContractReads({
+  const { data: commentIds, isLoading: isLoadingComments } = useContractReads({
     contracts: proposalIds
       ? proposalIds.map((id) => ({
-          address: contractAddress,
+          address: contractAddress as `0x${string}`,
           abi: contractABI,
           functionName: "getProposalComments",
           args: [id],
           chainId: base.id,
         }))
       : [],
-    enabled,
-  });
-
-  // New hook to fetch comment data
-  const {
-    data: commentData,
-    isLoading: isLoadingCommentData,
-    isError: isCommentDataError,
-    error: commentDataError,
-  } = useContractReads({
-    contracts: commentIds
-      ? commentIds.flatMap((res, index) => {
-          const commentIdsForProposal = res.result;
-
-          return commentIdsForProposal
-            ? commentIdsForProposal.map((commentId) => ({
-                address: contractAddress,
-                abi: contractABI,
-                functionName: "getComment",
-                args: [commentId],
-                chainId: base.id,
-              }))
-            : [];
-        })
-      : [],
-    enabled: !!commentIds,
+    enabled: !!proposalIds,
   });
 
   useEffect(() => {
-    if (commentData) {
-      console.log("commentData", commentData);
-      const processedComments = commentData.map((_comment, index) => {
-        const comment = _comment.result;
-
-        return {
-          proposalId: comment.proposalId,
-          author: comment.author,
-          content: comment.commentContent,
-          timestamp: new Date(
-            Number(comment.timestamp) * 1000
-          ).toLocaleString(),
-        };
-      });
-      console.log("done processing comments", processedComments);
-      setProcessedComments(processedComments);
-    }
-  }, [commentData]);
-
-  useEffect(() => {
-    if (
-      proposalsData &&
-      votesData &&
-      commentIds &&
-      proposalIds &&
-      processedComments
-    ) {
+    if (proposalsData && votesData && commentIds && proposalIds) {
       const processedData = proposalIds.map((proposalId, index) => {
         const proposal = proposalsData[index].result;
         const votes = votesData[index].result;
@@ -332,26 +263,22 @@ const AppList: React.FC<AppListProps> = ({ view }) => {
           ? parseFloat(formatEther(votes[1])).toFixed(2)
           : "0";
 
-        const proposalComments = processedComments.filter(
-          (comment) => comment.proposalId === proposalId
-        );
-
         return {
-          id: proposalId,
+          id: proposalId.toString(),
           name: proposal.description,
           description: proposal.description,
+          descriptionHTML: DOMPurify.sanitize(proposal.description),
           logo: "/placeholder-logo.png",
           likes,
           dislikes,
           screenshot: ["/placeholder-screenshot.png"],
           liked: false,
-          comments: proposalComments,
+          comments: [],
           author: proposal.author,
           exists: proposal.exists,
           targetAddress: proposal.targetMetadata?.targetAddress || "",
           safeSigners: proposal.safeMetadata?.safeSigners || [],
-          safeThreshold:
-            proposal.safeMetadata?.safeThreshold?.toString() || "0",
+          safeThreshold: proposal.safeMetadata?.safeThreshold?.toString() || "0",
           fieldsMetadata: proposal.fieldsMetadata,
         };
       });
@@ -359,45 +286,17 @@ const AppList: React.FC<AppListProps> = ({ view }) => {
       const parsedData = parseContractData(processedData);
       setData(parsedData);
     }
-  }, [proposalsData, votesData, commentIds, proposalIds, processedComments]);
-
-  const [selectedApp, setSelectedApp] = useState<CryptoApp | null>(null);
-  const [heartBubbles, setHeartBubbles] = useState<
-    { x: number; y: number; id: string; path: string }[]
-  >([]);
-  const heartButtonRef = useRef<HTMLButtonElement>(null);
-  const [hoveredApp, setHoveredApp] = useState<CryptoApp | null>(null);
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  }, [proposalsData, votesData, commentIds, proposalIds]);
 
   const handleMouseMove = (e: MouseEvent) => {
     setMousePosition({ x: e.clientX, y: e.clientY });
   };
 
   const handleLike = async (appId: string) => {
-   window.location.href = "https://jokerace.io/contest/base/0x7f4e1f8d7b626d5120008daedcea921060ebfb68"
-    // Implement like functionality here
-    /*setData((prevData) =>
-      prevData.map((app) =>
-        app.id === appId
-          ? { ...app, likes: (parseFloat(app.likes) + 1).toString() }
-          : app
-      )
-    );
-
-    if (heartButtonRef.current) {
-      const { left, top, width, height } =
-        heartButtonRef.current.getBoundingClientRect();
-      const x = left + width / 2;
-      const y = top + height / 2;
-      const newBubbles = Array.from({ length: 10 }).map((_, index) => ({
-        x,
-        y,
-        id: `heart-bubble-${heartBubbles.length + index}`,
-        path: `bubble-path-${Math.floor(Math.random() * 5) + 1}`,
-      }));
-      setHeartBubbles([...heartBubbles, ...newBubbles]);
+    if (onLike) {
+      onLike(appId);
     }
-      */
+    // Add heart bubble animation logic here if needed
   };
 
   const handleAppClick = (app: CryptoApp) => {
@@ -445,93 +344,62 @@ const AppList: React.FC<AppListProps> = ({ view }) => {
         onMouseMove={handleMouseMove}
       >
         {view === "list" ? (
-          <>
-            <div className="flex items-start pb-4 transition-all ">
-              <div className="w-12 h-12 mr-4 relative flex-shrink-0">
-                <Image
-                  src={app.logo}
-                  alt={`${app.name} logo`}
-                  fill
-                  className="rounded-md object-cover"
-                />
+          <div className="flex items-start pb-4 transition-all">
+            <div className="w-12 h-12 mr-4 relative flex-shrink-0">
+              <Image
+                src={app.logo}
+                alt={`${app.name} logo`}
+                fill
+                className="rounded-md object-cover"
+              />
+            </div>
+            <div className="flex-grow">
+              <h3 className="text-lg font-semibold">{app.name}</h3>
+              <div className="pr-24">
+                {renderDescription(truncatedDescription)}
               </div>
-              <div className="flex-grow">
-                <h3 className="text-lg font-semibold">{app.name}</h3>
-                <div className="pr-24">
-                  {renderDescription(truncatedDescription)}
-                </div>
-                <div className="mt-2 flex items-center">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="opacity-80 hover:opacity-100 transition-all h-5 w-5 text-gray-400 mr-1"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  <span className="text-xs text-gray-500">
-                    {app.comments?.length || 0}{" "}
-                  </span>
-                </div>
+              <div className="mt-2 flex items-center">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="opacity-80 hover:opacity-100 transition-all h-5 w-5 text-gray-400 mr-1"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                <span className="text-xs text-gray-500">
+                  {app.comments?.length || 0}{" "}
+                </span>
               </div>
-              <button
-                className="flex items-center flex-col justify-center"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleLike(app.id);
-                }}
-                ref={heartButtonRef}
-              >
+            </div>
+            <button
+              className="flex flex-col items-center justify-center ml-2 flex-shrink-0"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleLike(app.id);
+              }}
+              ref={heartButtonRef}
+            >
+              <div className="w-16 h-16 relative">
                 <Image
                   alt="heart"
                   src="/Marshki.png"
-                  className="opacity-80 hover:opacity-100 transition-all"
-                  width={72}
-                  height={72}
-                  unoptimized
-                  priority
+                  fill
+                  className="object-contain"
                 />
-                <span className="ml-1 text-yellow-400">
-                  {Math.floor(parseFloat(app.likes))}
-                </span>
-              </button>
-            </div>
-            {hoveredApp && hoveredApp.id === app.id && (
-              <div
-                className="fixed z-10 bg-[#FAFAFA] shadow-lg rounded-lg  w-96 overflow-hidden"
-                style={{
-                  left: `${mousePosition.x + 16}px`,
-                  top: `${mousePosition.y + 16}px`,
-                }}
-              >
-                {app.screenshot && app.screenshot.length > 0 && (
-                  <div className="relative mb-2 rounded-2xl overflow-hidden w-full ">
-                    <Image
-                      src={app.screenshot[0]}
-                      alt={`${app.name} screenshot`}
-                      width={240}
-                      height={120}
-                      className="w-full"
-                    />
-                  </div>
-                )}
-                <div className="p-4">
-                  <h3 className="text-lg font-semibold truncate">{app.name}</h3>
-                  <p className="text-sm text-gray-600 mt-2 line-clamp-6 overflow-ellipsis">
-                    {app.description}
-                  </p>
-                 
-                </div>
               </div>
-            )}
-          </>
+              <span className="mt-1 text-xs text-yellow-400 whitespace-nowrap">
+                {Math.floor(parseFloat(app.likes))}
+              </span>
+            </button>
+          </div>
         ) : (
           <div className="flex flex-col border-gray-50 border p-1 shadow-md hover:shadow-xl transition-all duration-300 rounded-lg">
-            <div className="relative mb-4 rounded-lg overflow-hidden aspect-video ">
+            <div className="relative mb-4 rounded-lg overflow-hidden aspect-video">
               <Image
                 src={app.screenshot[0] || "/Placeholder.png"}
                 alt={`${app.name} screenshot`}
@@ -539,7 +407,7 @@ const AppList: React.FC<AppListProps> = ({ view }) => {
                 className="object-cover"
               />
             </div>
-            <div className="flex items-start px-4 2xl:px-4  pb-4 ">
+            <div className="flex items-start px-4 2xl:px-4 pb-4">
               <div className="flex-grow min-w-0">
                 <h3 className="text-lg font-semibold truncate">{app.name}</h3>
                 <div className="line-clamp-2 text-xs overflow-hidden text-ellipsis">
@@ -547,7 +415,7 @@ const AppList: React.FC<AppListProps> = ({ view }) => {
                 </div>
               </div>
               <button
-                className="flex flex-col -translate-y-3 translate-x-3 justify-center items-center ml-2 flex-shrink-0"
+                className="flex flex-col items-center justify-center ml-2 flex-shrink-0"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleLike(app.id);
@@ -573,45 +441,24 @@ const AppList: React.FC<AppListProps> = ({ view }) => {
     );
   };
 
-  /** Step 4: Handle loading and error states **/
-  if (
-    isLoadingProposalIds ||
-    isLoadingProposals ||
-    isLoadingVotes ||
-    isLoadingComments
-  ) {
+  const isLoading = isLoadingProposalIds || isLoadingProposals || isLoadingVotes || isLoadingComments;
+
+  if (isLoading) {
     return <div>Loading...</div>;
   }
 
-  if (
-    isProposalIdsError ||
-    isProposalsError ||
-    isVotesError ||
-    isCommentsError
-  ) {
-    return (
-      <div>
-        Error:{" "}
-        {proposalIdsError?.message ||
-          proposalsError?.message ||
-          votesError?.message ||
-          commentsError?.message}
-      </div>
-    );
+  if (isProposalIdsError) {
+    return <div>Error loading data. Please check the contract address.</div>;
   }
 
-  /** Step 5: Render the data **/
   return (
     <div className="app-list-container">
       <div className="mb-4">
-   
-
         <button
           onClick={toggleSortOrder}
           className="px-4 py-2 text-[#b98000] font-medium sign-in-button rounded-[38px] cursor-pointer transition-all justify-center items-center gap-2.5 inline-flex"
         > 
-          Sort by Votes:{" "}
-          {sortOrder === "desc" ? "Highest First" : "Lowest First"}
+          Sort by Votes: {sortOrder === "desc" ? "Highest First" : "Lowest First"}
         </button>
       </div>
       <div

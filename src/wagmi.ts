@@ -2,6 +2,10 @@ import { http, cookieStorage, createConfig, createStorage } from 'wagmi'
 import { mainnet, sepolia, base } from 'wagmi/chains' // Added base import
 import { coinbaseWallet, injected, walletConnect } from 'wagmi/connectors'
 
+const baseRpcUrl = 'https://mainnet.base.org'
+
+
+
 export function getConfig() {
   return createConfig({
     chains: [mainnet, sepolia, base], // Added base to chains array
@@ -17,7 +21,7 @@ export function getConfig() {
     transports: {
       [mainnet.id]: http(),
       [sepolia.id]: http(),
-      [base.id]: http(), // Added base transport
+      [base.id]: http(baseRpcUrl),
     },
   })
 }

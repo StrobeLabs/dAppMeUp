@@ -1,10 +1,17 @@
+"use client";
+
 import Image from "next/image";
 import React from "react";
 
 function Navbar() {
   return (
     <header className="flex justify-between items-center mb-6 border-b pb-3 px-44 p-6">
-      <div className="flex items-center">
+      <div
+        onClick={() => {
+          window.location.href = "/";
+        }}
+        className="flex items-center cursor-pointer"
+      >
         <Image
           unoptimized
           priority
